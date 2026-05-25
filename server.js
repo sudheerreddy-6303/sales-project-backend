@@ -16,10 +16,27 @@ try { XLSX = require('xlsx'); } catch(e) {
 const app  = express();
 const PORT = process.env.PORT || 5000;
 
+// ── CORS ── supports single URL or comma-separated list in FRONTEND_URL
+const allowedOrigins = process.env.FRONTEND_URL
+  ? process.env.FRONTEND_URL.split(',').map(u => u.trim()).filter(Boolean)
+  : ['*'];
+
 app.use(cors({
-  origin: process.env.FRONTEND_URL || '*',
+  origin: (origin, callback) => {
+    // Allow requests with no origin (mobile apps, curl, Postman)
+    if (!origin) return callback(null, true);
+    if (allowedOrigins.includes('*') || allowedOrigins.includes(origin)) {
+      return callback(null, true);
+    }
+    return callback(new Error(`CORS: origin ${origin} not allowed`));
+  },
   credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
 }));
+
+// Handle preflight OPTIONS for all routes
+app.options('*', cors());
 app.use(bodyParser.json({ limit: '10mb' }));
 
 // Multer: accept file uploads in memory (for Excel parsing)
@@ -59,6 +76,7 @@ function matchCol(headers, patterns) {
 // ════════════════════════════════════════════════════════════
 const dbConfig = {
   host:        process.env.DB_HOST     || 'localhost',
+  port:        parseInt(process.env.DB_PORT) || 3306,
   user:        process.env.DB_USER     || 'root',
   password:    process.env.DB_PASSWORD || '',
   database:    process.env.DB_NAME     || 'deeraj_crm',
@@ -895,6 +913,15 @@ app.delete('/api/service-calls/:id', auth, adminOnly, async (req, res) => {
   finally { conn.end(); }
 });
 
+
+// ── Health check (useful for Render uptime checks)
+app.get('/', (req, res) => res.json({ status: 'ok', message: 'Deeraj CRM API is running' }));
+app.get('/api', (req, res) => res.json({ status: 'ok', message: 'Deeraj CRM API is running' }));
+
+// ── 404 catch-all for unknown routes
+app.use((req, res) => {
+  res.status(404).json({ error: `Route not found: ${req.method} ${req.originalUrl}` });
+});
 
 // ════════════════════════════════════════════════════════════
 app.listen(PORT, () => {
